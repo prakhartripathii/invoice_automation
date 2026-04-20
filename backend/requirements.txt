@@ -30,7 +30,7 @@ numpy==1.26.4
 Pillow==10.4.0
 pdf2image==1.17.0
 paddleocr==2.7.3
-paddlepaddle==2.6.1
+paddlepaddle==2.6.2
 azure-ai-formrecognizer==3.3.3
 azure-storage-blob==12.20.0
 
