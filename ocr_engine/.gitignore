@@ -1,0 +1,21 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Training artifacts (large)
+artifacts/
+datasets/raw/
+datasets/synthetic/
+datasets/active/
+mlruns/
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db

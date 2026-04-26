@@ -38,3 +38,10 @@ yarn-error.log*
 # App-specific
 backend/storage/
 !backend/storage/.gitkeep
+
+# OCR engine artifacts and datasets — too large/proprietary for GitHub
+ocr_engine/artifacts/
+ocr_engine/datasets/
+ocr_engine/install.log
+ocr_engine/training.log
+ocr_engine/prepare_pdfs.log

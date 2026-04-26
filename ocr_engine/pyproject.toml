@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocr_engine"
+version = "0.1.0"
+description = "Invoice OCR engine: PaddleOCR + fine-tuned LayoutLMv3 with Champ/Challenger ensemble and active learning"
+requires-python = ">=3.10"
+readme = "README.md"
+
+# This folder IS the `ocr_engine` package. We remap the package name → "."
+# and explicitly enumerate subpackages so `from ocr_engine.X import ...`
+# works after `pip install -e .`.
+[tool.setuptools]
+package-dir = {"ocr_engine" = "."}
+packages = [
+  "ocr_engine",
+  "ocr_engine.config",
+  "ocr_engine.data",
+  "ocr_engine.preprocessing",
+  "ocr_engine.ocr",
+  "ocr_engine.extraction",
+  "ocr_engine.ensemble",
+  "ocr_engine.active_learning",
+  "ocr_engine.scripts",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+pythonpath = [".."]
