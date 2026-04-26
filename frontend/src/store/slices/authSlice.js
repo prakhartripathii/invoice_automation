@@ -3,12 +3,39 @@ import toast from 'react-hot-toast';
 
 import { authApi, tokenStorage } from '../../services/api.js';
 
-const initialState = {
-  user: null,
-  status: 'idle',        // idle | loading | authenticated | error
-  initialized: false,    // has the initial "me" check completed?
-  error: null,
+// When the mock adapter is active we pre-authenticate as a seeded admin so the
+// UI can be demoed without a backend or login screen. This is a dev-only path —
+// guarded by VITE_USE_MOCK_API so production builds never ship it.
+const MOCK_MODE = import.meta.env.VITE_USE_MOCK_API === 'true';
+
+const MOCK_USER = {
+  id: '00000000-0000-0000-0000-000000000001',
+  email: 'admin@invoiceapp.com',
+  full_name: 'Ada Admin',
+  role: 'ADMIN',
+  is_active: true,
+  created_at: '2026-01-01T09:00:00Z',
 };
+
+const initialState = MOCK_MODE
+  ? {
+      user: MOCK_USER,
+      status: 'authenticated',
+      initialized: true,
+      error: null,
+    }
+  : {
+      user: null,
+      status: 'idle',        // idle | loading | authenticated | error
+      initialized: false,    // has the initial "me" check completed?
+      error: null,
+    };
+
+if (MOCK_MODE) {
+  // Give the mock API adapter a token so any authenticated call (e.g. /auth/me)
+  // succeeds on refresh without bouncing through the login screen.
+  tokenStorage.set({ access_token: 'mock-access', refresh_token: 'mock-refresh' });
+}
 
 export const login = createAsyncThunk(
   'auth/login',

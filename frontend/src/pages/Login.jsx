@@ -8,11 +8,11 @@ export default function Login() {
   const dispatch = useDispatch();
   const { state } = useLocation();
   const { user, status } = useSelector((s) => s.auth);
-  const [email, setEmail] = useState('admin@invoice.local');
+  const [email, setEmail] = useState('admin@invoiceapp.com');
   const [password, setPassword] = useState('Admin@12345');
 
   useEffect(() => {
-    document.title = 'Sign in — Invoice Automation';
+    document.title = 'Sign in — DocuSense';
   }, []);
 
   if (user) {
@@ -27,7 +27,7 @@ export default function Login() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
-        <h1>Invoice Automation</h1>
+        <h1>DocuSense</h1>
         <p>Sign in to process invoices and manage approvals.</p>
         <div className="form-control">
           <label htmlFor="email">Email</label>
@@ -62,7 +62,7 @@ export default function Login() {
           {status === 'loading' ? 'Signing in…' : 'Sign in'}
         </button>
         <p style={{ marginTop: 24, fontSize: 12 }} className="muted">
-          Default dev login seeded at startup: admin@invoice.local / Admin@12345
+          Default dev login seeded at startup: admin@invoiceapp.com / Admin@12345
         </p>
       </form>
     </div>

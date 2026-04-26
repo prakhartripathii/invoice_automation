@@ -16,7 +16,7 @@ const DELAY_MS = 250;
 // ---------- Seed data ----------
 const SEED_USER = {
   id: '00000000-0000-0000-0000-000000000001',
-  email: 'admin@invoice.local',
+  email: 'admin@invoiceapp.com',
   full_name: 'Ada Admin',
   role: 'ADMIN',
   is_active: true,
@@ -42,25 +42,50 @@ function rnd(seed) {
   };
 }
 
+const CITIES = ['Mumbai', 'Bengaluru', 'Delhi', 'Pune', 'Hyderabad', 'Chennai', 'San Francisco', 'New York'];
+const TERMS_SAMPLES = [
+  'Payment due within 30 days. Late payments incur 1.5% monthly interest.',
+  'Net 15 terms. Goods remain property of seller until paid in full.',
+  'Payment by bank transfer only. No returns after 7 days from delivery.',
+  'Net 45. Disputes must be raised within 10 days of invoice date.',
+];
+
 function makeInvoice(i) {
   const r = rnd(i + 1);
   const vendor = VENDORS[Math.floor(r() * VENDORS.length)];
   const status = STATUSES[Math.floor(r() * STATUSES.length)];
   const total = Math.round(r() * 500000) / 100;
-  const tax = Math.round(total * 0.08 * 100) / 100;
+  // Tax breakdown: GST is single-tax (intra-state); IGST is inter-state; CGST is half of GST
+  const gst = Math.round(total * 0.09 * 100) / 100;
+  const cgst = Math.round(total * 0.045 * 100) / 100;
+  const igst = Math.round(total * 0.09 * 100) / 100;
+  const tax = gst;
   const subtotal = Math.round((total - tax) * 100) / 100;
+  const totalQty = Math.max(1, Math.floor(r() * 50));
+  const city = CITIES[Math.floor(r() * CITIES.length)];
+  const slug = vendor.toLowerCase().replace(/[^a-z]+/g, '');
   const createdDaysAgo = Math.floor(r() * 30);
   const created = new Date(Date.now() - createdDaysAgo * 86400000).toISOString();
   return {
     id: `invoice-${String(i).padStart(4, '0')}`,
+    sno: i + 1,
     original_filename: `invoice_${1000 + i}.pdf`,
     vendor_name: vendor,
+    vendor_address: `${100 + i} Market Street, ${city}`,
+    vendor_phone: `+1-555-${String(1000 + i).slice(-4)}`,
+    vendor_email: `accounts@${slug}.com`,
     invoice_number: `INV-${2026}-${String(1000 + i)}`,
     invoice_date: created.slice(0, 10),
+    purchase_order: `PO-${8000 + i}`,
     currency: 'USD',
     subtotal,
     tax_amount: tax,
+    gst,
+    igst,
+    cgst,
+    total_quantity: totalQty,
     total_amount: total,
+    terms_and_conditions: TERMS_SAMPLES[i % TERMS_SAMPLES.length],
     status,
     confidence_score: Math.round((0.6 + r() * 0.39) * 100) / 100,
     created_at: created,

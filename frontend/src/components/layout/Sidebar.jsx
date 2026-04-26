@@ -2,7 +2,8 @@ import { NavLink } from 'react-router-dom';
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◧' },
-  { to: '/invoices', label: 'Invoices', icon: '▤' },
+  { to: '/upload', label: 'Upload Invoices', icon: '⇪' },
+  { to: '/invoices', label: 'View Invoices', icon: '▤' },
   { to: '/review', label: 'Review Queue', icon: '◉' },
 ];
 
@@ -10,8 +11,8 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <div className="sidebar__brand-logo">IA</div>
-        <span>Invoice AI</span>
+        <div className="sidebar__brand-logo">DS</div>
+        <span>DocuSense</span>
       </div>
       <nav className="sidebar__nav">
         {NAV.map((item) => (
@@ -30,7 +31,7 @@ export default function Sidebar() {
       <div className="sidebar__spacer" />
       <div className="sidebar__footer">
         <div>v1.0.0</div>
-        <div>© {new Date().getFullYear()} Invoice AI</div>
+        <div>© {new Date().getFullYear()} DocuSense</div>
       </div>
     </aside>
   );

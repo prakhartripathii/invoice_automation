@@ -1,8 +1,18 @@
+/**
+ * Drag-and-drop upload component.
+ *
+ * Each drop event = one batch. We:
+ *   1. dispatch `startBatch(totalCount)`  → creates a session record
+ *   2. upload files serially so progress bar is meaningful
+ *   3. append every server-side invoice response to that batch
+ *   4. refresh global stats + invoice list at the end
+ */
 import { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { uploadInvoice, fetchStats, fetchInvoices } from '../../store/slices/invoicesSlice.js';
+import { startBatch, appendInvoiceToBatch } from '../../store/slices/batchesSlice.js';
 
 const ACCEPTED = {
   'application/pdf': ['.pdf'],
@@ -17,10 +27,21 @@ export default function UploadDropzone() {
 
   const onDrop = useCallback(
     async (accepted) => {
+      if (!accepted.length) return;
+
+      // 1. Open a new batch session
+      const action = dispatch(startBatch(accepted.length));
+      const batchId = action.payload.id;
+
+      // 2. Upload serially so the progress bar reflects per-file progress
       for (const file of accepted) {
-        // Upload serially so the progress bar is meaningful.
-        await dispatch(uploadInvoice(file));
+        const result = await dispatch(uploadInvoice(file));
+        if (result.payload && result.meta?.requestStatus === 'fulfilled') {
+          dispatch(appendInvoiceToBatch({ batchId, invoice: result.payload }));
+        }
       }
+
+      // 3. Refresh global aggregates
       dispatch(fetchStats());
       dispatch(fetchInvoices());
     },

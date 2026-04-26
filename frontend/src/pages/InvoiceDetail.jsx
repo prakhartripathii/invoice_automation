@@ -10,18 +10,49 @@ import {
   fetchInvoiceDetail,
   submitReviewAction,
 } from '../store/slices/invoicesSlice.js';
+import { formatMoney } from '../utils/money.js';
 
-const EDITABLE = [
-  { key: 'vendor_name', label: 'Vendor name' },
-  { key: 'invoice_number', label: 'Invoice number' },
-  { key: 'invoice_date', label: 'Invoice date', type: 'date' },
-  { key: 'due_date', label: 'Due date', type: 'date' },
-  { key: 'purchase_order', label: 'Purchase order' },
-  { key: 'currency', label: 'Currency' },
-  { key: 'subtotal', label: 'Subtotal', type: 'number' },
-  { key: 'tax_amount', label: 'Tax amount', type: 'number' },
-  { key: 'total_amount', label: 'Total amount', type: 'number' },
+/**
+ * Grouped extracted-field schema. Each group renders as its own subsection
+ * inside the "Extracted fields" card.
+ */
+const FIELD_GROUPS = [
+  {
+    title: 'A. Basic Information',
+    fields: [
+      { key: 'sno', label: 'SNO.', readOnly: true },
+      { key: 'invoice_number', label: 'Invoice No.' },
+      { key: 'invoice_date', label: 'Date of Invoice', type: 'date' },
+      { key: 'purchase_order', label: 'PO No.' },
+    ],
+  },
+  {
+    title: 'B. Vendor Details',
+    fields: [
+      { key: 'vendor_name', label: 'Vendor Name' },
+      { key: 'vendor_address', label: 'Address' },
+      { key: 'vendor_phone', label: 'Phone Number' },
+      { key: 'vendor_email', label: 'Email', type: 'email' },
+    ],
+  },
+  {
+    title: 'C. Financial Details',
+    fields: [
+      { key: 'total_quantity', label: 'Total Quantity', type: 'number' },
+      { key: 'gst', label: 'GST', type: 'number' },
+      { key: 'igst', label: 'IGST', type: 'number' },
+      { key: 'cgst', label: 'CGST', type: 'number' },
+      { key: 'total_amount', label: 'Total Amount', type: 'number' },
+    ],
+  },
+  {
+    title: 'D. Additional Information',
+    fields: [
+      { key: 'terms_and_conditions', label: 'Terms & Conditions', type: 'textarea' },
+    ],
+  },
 ];
+
 
 function asInputDate(v) {
   if (!v) return '';
@@ -36,6 +67,7 @@ export default function InvoiceDetail() {
   const { id } = useParams();
   const dispatch = useDispatch();
   const { current, currentStatus } = useSelector((s) => s.invoices);
+  const displayCurrency = useSelector((s) => s.ui.currency);
   const [form, setForm] = useState({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -48,15 +80,20 @@ export default function InvoiceDetail() {
   useEffect(() => {
     if (current) {
       setForm({
+        sno: current.sno ?? '',
         vendor_name: current.vendor_name || '',
+        vendor_address: current.vendor_address || '',
+        vendor_phone: current.vendor_phone || '',
+        vendor_email: current.vendor_email || '',
         invoice_number: current.invoice_number || '',
         invoice_date: asInputDate(current.invoice_date),
-        due_date: asInputDate(current.due_date),
         purchase_order: current.purchase_order || '',
-        currency: current.currency || 'USD',
-        subtotal: current.subtotal || '',
-        tax_amount: current.tax_amount || '',
-        total_amount: current.total_amount || '',
+        total_quantity: current.total_quantity ?? '',
+        gst: current.gst ?? current.tax_amount ?? '',
+        igst: current.igst ?? '',
+        cgst: current.cgst ?? '',
+        total_amount: current.total_amount ?? '',
+        terms_and_conditions: current.terms_and_conditions || '',
       });
       setNotes(current.review_notes || '');
     }
@@ -96,14 +133,19 @@ export default function InvoiceDetail() {
       updates: dirty
         ? {
             vendor_name: form.vendor_name || null,
+            vendor_address: form.vendor_address || null,
+            vendor_phone: form.vendor_phone || null,
+            vendor_email: form.vendor_email || null,
             invoice_number: form.invoice_number || null,
             invoice_date: form.invoice_date || null,
-            due_date: form.due_date || null,
             purchase_order: form.purchase_order || null,
-            currency: form.currency || null,
-            subtotal: form.subtotal || null,
-            tax_amount: form.tax_amount || null,
+            total_quantity: form.total_quantity || null,
+            gst: form.gst || null,
+            igst: form.igst || null,
+            cgst: form.cgst || null,
+            tax_amount: form.gst || null,
             total_amount: form.total_amount || null,
+            terms_and_conditions: form.terms_and_conditions || null,
           }
         : undefined,
     };
@@ -143,32 +185,57 @@ export default function InvoiceDetail() {
       <div className="grid-2 section">
         <div className="card">
           <h2 className="card__title">Extracted fields</h2>
-          <div>
-            {EDITABLE.map((f) => (
-              <div
-                className={`form-control ${mismatches[f.key] ? 'ocr-field--mismatch' : ''}`}
-                key={f.key}
-              >
-                <label>
-                  {f.label}
-                  {mismatches[f.key] && (
-                    <span style={{ color: '#a16207', marginLeft: 8 }}>
-                      ⚠ OCR mismatch
-                    </span>
-                  )}
-                </label>
-                <input
-                  className="input"
-                  type={f.type || 'text'}
-                  value={form[f.key] ?? ''}
-                  onChange={(e) =>
-                    setForm({ ...form, [f.key]: e.target.value })
-                  }
-                  disabled={!canReview && current.status !== 'APPROVED'}
-                />
+          {FIELD_GROUPS.map((group) => (
+            <div className="field-group" key={group.title}>
+              <h3 className="field-group__title">{group.title}</h3>
+              <div className="field-group__grid">
+                {group.fields.map((f) => {
+                  const disabled =
+                    f.readOnly ||
+                    (!canReview && current.status !== 'APPROVED');
+                  const value = form[f.key] ?? '';
+                  return (
+                    <div
+                      className={`form-control ${
+                        f.type === 'textarea' ? 'form-control--full' : ''
+                      } ${mismatches[f.key] ? 'ocr-field--mismatch' : ''}`}
+                      key={f.key}
+                    >
+                      <label>
+                        {f.label}
+                        {mismatches[f.key] && (
+                          <span style={{ color: '#a16207', marginLeft: 8 }}>
+                            ⚠ OCR mismatch
+                          </span>
+                        )}
+                      </label>
+                      {f.type === 'textarea' ? (
+                        <textarea
+                          className="textarea"
+                          rows={4}
+                          value={value}
+                          onChange={(e) =>
+                            setForm({ ...form, [f.key]: e.target.value })
+                          }
+                          disabled={disabled}
+                        />
+                      ) : (
+                        <input
+                          className="input"
+                          type={f.type || 'text'}
+                          value={value}
+                          onChange={(e) =>
+                            setForm({ ...form, [f.key]: e.target.value })
+                          }
+                          disabled={disabled}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
         <div className="stack">
@@ -258,14 +325,18 @@ export default function InvoiceDetail() {
         </h2>
         <div className="ocr-compare">
           <OcrPanel
-            title="Champ — Azure DI"
+            title="Champ"
             data={current.champ_ocr_raw}
             mismatches={mismatches}
+            sourceCurrency={current.currency || 'USD'}
+            displayCurrency={displayCurrency}
           />
           <OcrPanel
-            title="Challenger — PaddleOCR"
+            title="Challenger"
             data={current.challenger_ocr_raw}
             mismatches={mismatches}
+            sourceCurrency={current.currency || 'USD'}
+            displayCurrency={displayCurrency}
           />
         </div>
       </div>
@@ -292,8 +363,8 @@ export default function InvoiceDetail() {
                     <td>{i.line_number}</td>
                     <td>{i.description}</td>
                     <td>{Number(i.quantity).toString()}</td>
-                    <td>{Number(i.unit_price).toFixed(2)}</td>
-                    <td>{Number(i.amount).toFixed(2)}</td>
+                    <td>{formatMoney(i.unit_price, current.currency || 'USD', displayCurrency)}</td>
+                    <td>{formatMoney(i.amount, current.currency || 'USD', displayCurrency)}</td>
                   </tr>
                 ))}
             </tbody>
@@ -342,27 +413,31 @@ export default function InvoiceDetail() {
   );
 }
 
-function OcrPanel({ title, data, mismatches }) {
+function OcrPanel({ title, data, mismatches, sourceCurrency = 'USD', displayCurrency = 'USD' }) {
   const fields = [
     ['vendor_name', 'Vendor'],
     ['invoice_number', 'Invoice #'],
     ['invoice_date', 'Date'],
-    ['subtotal', 'Subtotal'],
-    ['tax_amount', 'Tax'],
-    ['total_amount', 'Total'],
+    ['subtotal', 'Subtotal', 'money'],
+    ['tax_amount', 'Tax', 'money'],
+    ['total_amount', 'Total', 'money'],
     ['purchase_order', 'PO'],
   ];
   return (
     <div className="ocr-compare__col">
       <h4>{title}</h4>
       {data ? (
-        fields.map(([k, label]) => (
+        fields.map(([k, label, kind]) => (
           <div
             key={k}
             className={`ocr-field ${mismatches[k] ? 'ocr-field--mismatch' : ''}`}
           >
             <span className="ocr-field__label">{label}</span>
-            <span className="ocr-field__value">{formatCell(data[k])}</span>
+            <span className="ocr-field__value">
+              {kind === 'money'
+                ? formatMoney(data[k], sourceCurrency, displayCurrency)
+                : formatCell(data[k])}
+            </span>
           </div>
         ))
       ) : (
