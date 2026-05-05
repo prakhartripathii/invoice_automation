@@ -49,12 +49,12 @@ class UserService:
 
     def ensure_seed_admin(self) -> User:
         """Idempotently create a default admin for dev/demo."""
-        existing = self.get_by_email("admin@invoice.local")
+        existing = self.get_by_email("admin@invoiceapp.com")
         if existing:
             return existing
         return self.create(
             UserCreate(
-                email="admin@invoice.local",
+                email="admin@invoiceapp.com",
                 full_name="System Administrator",
                 password="Admin@12345",
                 role=UserRole.ADMIN,

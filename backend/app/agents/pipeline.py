@@ -18,6 +18,7 @@ from app.agents.integration import (
 )
 from app.agents.preprocessing import PreprocessingAgent, PreprocessingInput
 from app.agents.validation import ValidationAgent, ValidationInput, ValidationOutput
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.invoice import (
     Invoice,
@@ -91,25 +92,44 @@ def run_pipeline(invoice_id: UUID, db) -> PipelineResult:
         duration_ms=champ_res.duration_ms,
     )
 
-    chall_res = ChallengerOCRAgent().execute(
-        ChallengerOCRInput(
-            encoded_pngs=encoded_pages or [file_bytes],
-            file_hash=invoice.file_hash,
+    # The Challenger (PaddleOCR) is the slowest step in the pipeline (~60-90s
+    # on CPU). When disabled, we skip it entirely and feed Champ's output as
+    # the Challenger side of validation — this trivially auto-agrees, so the
+    # decision falls through to Champ confidence alone.
+    chall_res = None
+    if settings.enable_challenger_ocr:
+        chall_res = ChallengerOCRAgent().execute(
+            ChallengerOCRInput(
+                encoded_pngs=encoded_pages or [file_bytes],
+                file_hash=invoice.file_hash,
+            )
         )
-    )
-    svc.add_log(
-        invoice.id,
-        agent=chall_res.agent,
-        level=LogLevel.INFO if chall_res.success else LogLevel.ERROR,
-        message="Challenger OCR ok" if chall_res.success else f"Challenger OCR failed: {chall_res.error}",
-        duration_ms=chall_res.duration_ms,
-    )
+        svc.add_log(
+            invoice.id,
+            agent=chall_res.agent,
+            level=LogLevel.INFO if chall_res.success else LogLevel.ERROR,
+            message="Challenger OCR ok" if chall_res.success else f"Challenger OCR failed: {chall_res.error}",
+            duration_ms=chall_res.duration_ms,
+        )
+    else:
+        svc.add_log(
+            invoice.id,
+            agent="challenger_ocr",
+            level=LogLevel.INFO,
+            message="Challenger OCR skipped (single-engine mode)",
+            duration_ms=0,
+        )
 
     # --- 4. Validation ---
+    challenger_output = (
+        chall_res.output
+        if (chall_res is not None and chall_res.success)
+        else (champ_res.output if champ_res.success else None)
+    )
     val_res = ValidationAgent().execute(
         ValidationInput(
             champ=champ_res.output if champ_res.success else None,
-            challenger=chall_res.output if chall_res.success else None,
+            challenger=challenger_output,
         )
     )
     if not val_res.success or val_res.output is None:
@@ -143,7 +163,9 @@ def run_pipeline(invoice_id: UUID, db) -> PipelineResult:
         champ_res.output.model_dump(mode="json") if champ_res.output else None
     )
     invoice.challenger_ocr_raw = (
-        chall_res.output.model_dump(mode="json") if chall_res.output else None
+        chall_res.output.model_dump(mode="json")
+        if (chall_res is not None and chall_res.output)
+        else None
     )
     invoice.validation_report = validated.report
 

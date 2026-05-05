@@ -1,0 +1,1 @@
+from app.db.base import Base; from app.db.session import engine; print('Force creating tables...'); Base.metadata.create_all(bind=engine); print('Done!')

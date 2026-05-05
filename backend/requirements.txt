@@ -34,6 +34,10 @@ paddlepaddle==2.6.2
 azure-ai-formrecognizer==3.3.3
 azure-storage-blob==12.20.0
 
+# Document export
+reportlab==4.2.2
+openpyxl==3.1.5
+
 # Utilities
 httpx==0.27.0
 tenacity==8.4.2

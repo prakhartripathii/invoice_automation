@@ -137,6 +137,67 @@ class InvoiceFilters(BaseModel):
 class ReviewAction(BaseModel):
     action: str = Field(..., pattern="^(APPROVE|REJECT|REPROCESS)$")
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+# ========== Assets (per-unit) ==========
+class InvoiceAssetBase(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    asset_name: Optional[str] = Field(default=None, max_length=512)
+    brand: Optional[str] = Field(default=None, max_length=255)
+    model_number: Optional[str] = Field(default=None, max_length=255)
+    serial_number: Optional[str] = Field(default=None, max_length=255)
+    description: Optional[str] = None
+    base_amount: Optional[Decimal] = Field(default=None, ge=0)
+    gst_amount: Optional[Decimal] = Field(default=None, ge=0)
+    total_amount: Optional[Decimal] = Field(default=None, ge=0)
+    warranty_start_date: Optional[date] = None
+    warranty_end_date: Optional[date] = None
+
+
+class InvoiceAssetRead(InvoiceAssetBase, ORMModel):
+    id: UUID
+    invoice_id: UUID
+    invoice_item_id: UUID
+    asset_index: int
+    unit_index: int
+
+
+class InvoiceAssetUpsert(InvoiceAssetBase):
+    """Single asset row coming back from the form. `id` present if updating."""
+    id: Optional[UUID] = None
+    invoice_item_id: UUID
+    asset_index: int = Field(..., ge=1)
+    unit_index: int = Field(..., ge=1)
+
+
+class AssetsSavePayload(BaseModel):
+    assets: List[InvoiceAssetUpsert]
+
+
+class ProductDetailsView(BaseModel):
+    """Combined response for the Product Details page."""
+    invoice_id: UUID
+    invoice_number: Optional[str]
+    vendor_name: Optional[str]
+    currency: Optional[str]
+    invoice_total: Optional[Decimal]
+    items: List[InvoiceItemRead]
+    assets: List[InvoiceAssetRead]
+
+
+class AssetsValidationIssue(BaseModel):
+    asset_index: int
+    field: str
+    message: str
+
+
+class AssetsSaveResponse(BaseModel):
+    assets: List[InvoiceAssetRead]
+    invoice_total: Optional[Decimal]
+    assets_total: Decimal
+    totals_match: bool
+    issues: List[AssetsValidationIssue] = Field(default_factory=list)
     updates: Optional[InvoiceUpdate] = None
 
 

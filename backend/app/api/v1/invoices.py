@@ -4,7 +4,10 @@ from math import ceil
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from io import BytesIO
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DBSession
 from app.core.config import settings
@@ -12,12 +15,16 @@ from app.core.logging import get_logger
 from app.db.models.invoice import InvoiceStatus
 from app.schemas.common import Page
 from app.schemas.invoice import (
+    AssetsSavePayload,
+    AssetsSaveResponse,
     DashboardStats,
     InvoiceDetail,
     InvoiceFilters,
     InvoiceRead,
     InvoiceUploadResponse,
+    ProductDetailsView,
 )
+from app.services.asset_service import AssetService
 from app.services.invoice_service import InvoiceService
 from app.services.storage_service import get_storage
 from app.utils.exceptions import (
@@ -141,3 +148,102 @@ def get_invoice(
 ) -> InvoiceDetail:
     invoice = InvoiceService(db).get_with_logs(invoice_id)
     return InvoiceDetail.model_validate(invoice)
+
+
+# --- Approved-invoice exports (PDF / XLSX) ---
+
+_DOWNLOADABLE_STATUSES = {
+    InvoiceStatus.APPROVED,
+    InvoiceStatus.AUTO_APPROVED,
+    InvoiceStatus.POSTED,
+}
+
+
+def _safe_filename_stem(invoice) -> str:
+    """Sanitize invoice number for use in a Content-Disposition filename."""
+    raw = invoice.invoice_number or str(invoice.id)
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in raw)
+
+
+# --- Per-unit assets (Product Details page) ---
+
+
+@router.get(
+    "/{invoice_id}/product-details",
+    response_model=ProductDetailsView,
+)
+def get_product_details(
+    invoice_id: UUID, db: DBSession, _user: CurrentUser
+) -> ProductDetailsView:
+    """Return invoice context + line items + (seeded) per-unit assets.
+
+    On first call this lazily expands every line item into `quantity` asset
+    rows with prefilled values; subsequent calls return the saved rows.
+    """
+    invoice = AssetService(db).get_or_seed_for_invoice(invoice_id)
+    return ProductDetailsView(
+        invoice_id=invoice.id,
+        invoice_number=invoice.invoice_number,
+        vendor_name=invoice.vendor_name,
+        currency=invoice.currency,
+        invoice_total=invoice.total_amount,
+        items=invoice.items,
+        assets=invoice.assets,
+    )
+
+
+@router.post(
+    "/{invoice_id}/assets",
+    response_model=AssetsSaveResponse,
+)
+def save_assets(
+    invoice_id: UUID,
+    payload: AssetsSavePayload,
+    db: DBSession,
+    _user: CurrentUser,
+) -> AssetsSaveResponse:
+    return AssetService(db).save_assets(invoice_id, payload.assets)
+
+
+@router.get("/{invoice_id}/download.pdf")
+def download_invoice_pdf(
+    invoice_id: UUID, db: DBSession, _user: CurrentUser
+) -> StreamingResponse:
+    invoice = InvoiceService(db).get_with_logs(invoice_id)
+    if invoice.status not in _DOWNLOADABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only approved or posted invoices can be downloaded.",
+        )
+    from app.services.export_service import build_invoice_pdf
+
+    pdf_bytes = build_invoice_pdf(invoice)
+    filename = f"invoice_{_safe_filename_stem(invoice)}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{invoice_id}/download.xlsx")
+def download_invoice_xlsx(
+    invoice_id: UUID, db: DBSession, _user: CurrentUser
+) -> StreamingResponse:
+    invoice = InvoiceService(db).get_with_logs(invoice_id)
+    if invoice.status not in _DOWNLOADABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only approved or posted invoices can be downloaded.",
+        )
+    from app.services.export_service import build_invoice_xlsx
+
+    xlsx_bytes = build_invoice_xlsx(invoice)
+    filename = f"invoice_{_safe_filename_stem(invoice)}.xlsx"
+    return StreamingResponse(
+        BytesIO(xlsx_bytes),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

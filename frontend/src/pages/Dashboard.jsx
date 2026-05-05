@@ -7,6 +7,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { SkeletonCard } from '../components/common/Skeleton.jsx';
+import StatusPieChart from '../components/invoice/StatusPieChart.jsx';
 import { fetchStats } from '../store/slices/invoicesSlice.js';
 
 const STAT_CARDS = [
@@ -73,6 +74,13 @@ export default function Dashboard() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {stats && (
+        <div className="card section">
+          <h2 className="card__title">Invoices by status</h2>
+          <StatusPieChart stats={stats} />
         </div>
       )}
 

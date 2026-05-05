@@ -105,6 +105,12 @@ class Invoice(Base, UUIDPrimaryKey, TimestampMixin):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    assets: Mapped[List["InvoiceAsset"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="InvoiceAsset.asset_index",
+    )
     logs: Mapped[List["ProcessingLog"]] = relationship(
         back_populates="invoice",
         cascade="all, delete-orphan",
@@ -135,6 +141,54 @@ class InvoiceItem(Base, UUIDPrimaryKey, TimestampMixin):
     tax_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
 
     invoice: Mapped[Invoice] = relationship(back_populates="items")
+
+
+class InvoiceAsset(Base, UUIDPrimaryKey, TimestampMixin):
+    """Per-unit asset record derived from an InvoiceItem.
+
+    A single line item with quantity=N is exploded into N InvoiceAsset rows
+    so each physical unit can be tracked independently (serial #, warranty,
+    etc.). Asset financials default to per-unit values from the parent line
+    item (base_amount = unit_price, total_amount = unit_price * 1).
+    """
+
+    __tablename__ = "invoice_assets"
+
+    invoice_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    invoice_item_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("invoice_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # 1-based index across all assets for the invoice — drives "Asset #N" labels.
+    asset_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Position within the parent line item (1..quantity).
+    unit_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    asset_name: Mapped[Optional[str]] = mapped_column(String(512))
+    brand: Mapped[Optional[str]] = mapped_column(String(255))
+    model_number: Mapped[Optional[str]] = mapped_column(String(255))
+    serial_number: Mapped[Optional[str]] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+
+    base_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    gst_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+
+    warranty_start_date: Mapped[Optional[date]] = mapped_column(Date)
+    warranty_end_date: Mapped[Optional[date]] = mapped_column(Date)
+
+    invoice: Mapped[Invoice] = relationship(back_populates="assets")
+
+    __table_args__ = (
+        Index("ix_invoice_assets_invoice_index", "invoice_id", "asset_index"),
+    )
 
 
 class ProcessingLog(Base, UUIDPrimaryKey, TimestampMixin):

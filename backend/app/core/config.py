@@ -49,22 +49,39 @@ class Settings(BaseSettings):
 
     # Storage
     storage_backend: Literal["local", "azure"] = "local"
+    # Use absolute path for Windows in .env, this is just the default fallback
     local_storage_path: str = "./storage"
     azure_storage_connection_string: str = ""
     azure_storage_container: str = "invoices"
     max_upload_size_mb: int = 25
     allowed_extensions: str = "pdf,png,jpg,jpeg,tiff,tif"
 
-    # Azure Document Intelligence
-    azure_di_endpoint: str = ""
-    azure_di_key: str = ""
-    azure_di_model: str = "prebuilt-invoice"
+    # --- Local LayoutLMv3 (preferred for digital PDFs) ---
+    ocr_engine_python: str = ""   # absolute path to ocr_engine venv python.exe
+    ocr_model_path: str = ""      # absolute path to fine-tuned model dir
+    # Persistent sidecar (keeps model in memory). When set + reachable, used
+    # in preference to the subprocess path. Subprocess remains as fallback.
+    ocr_sidecar_url: str = "http://127.0.0.1:8077"
+
+    # --- OCR.space Configuration (fallback) ---
+    ocr_space_api_key: str = ""
+    ocr_space_url: str = "https://api.ocr.space/parse/image"
+
+    # --- Azure Document Intelligence (Commented out logic) ---
+    # azure_di_endpoint: str = ""
+    # azure_di_key: str = ""
+    # azure_di_model: str = "prebuilt-invoice"
     use_mock_azure_ocr: bool = True
 
     # PaddleOCR
     paddle_ocr_lang: str = "en"
     paddle_ocr_use_gpu: bool = False
     use_mock_paddle_ocr: bool = True
+
+    # If False, the pipeline runs only the Champ engine and skips the
+    # ~60-90s Challenger pass entirely. Validation falls back to using
+    # Champ output as both sides of the comparison (auto-agree).
+    enable_challenger_ocr: bool = False
 
     # Validation
     confidence_threshold: float = 0.85

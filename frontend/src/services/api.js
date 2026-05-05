@@ -114,6 +114,18 @@ export const invoiceApi = {
       })
       .then((r) => r.data);
   },
+  downloadPdf: (id) =>
+    api
+      .get(`/invoices/${id}/download.pdf`, { responseType: 'blob' })
+      .then((r) => r.data),
+  downloadXlsx: (id) =>
+    api
+      .get(`/invoices/${id}/download.xlsx`, { responseType: 'blob' })
+      .then((r) => r.data),
+  productDetails: (id) =>
+    api.get(`/invoices/${id}/product-details`).then((r) => r.data),
+  saveAssets: (id, assets) =>
+    api.post(`/invoices/${id}/assets`, { assets }).then((r) => r.data),
 };
 
 export const reviewApi = {

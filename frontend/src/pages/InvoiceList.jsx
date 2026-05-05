@@ -7,6 +7,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 
+import toast from 'react-hot-toast';
+
 import StatusBadge from '../components/common/StatusBadge.jsx';
 import { SkeletonTable } from '../components/common/Skeleton.jsx';
 import {
@@ -15,16 +17,49 @@ import {
   setFilter,
 } from '../store/slices/invoicesSlice.js';
 import { VIEW_STATUSES, STATUS_LABELS } from '../constants/status.js';
+import { invoiceApi } from '../services/api.js';
+import { saveBlob } from '../utils/download.js';
+
+const DOWNLOADABLE = new Set(['APPROVED', 'AUTO_APPROVED', 'POSTED']);
+
+function safeStem(inv) {
+  const raw = inv.invoice_number || inv.id;
+  return String(raw).replace(/[^A-Za-z0-9._-]+/g, '_');
+}
 
 export default function InvoiceList() {
   const dispatch = useDispatch();
   const [params] = useSearchParams();
   const { list, filters, listStatus } = useSelector((s) => s.invoices);
   const [expandedId, setExpandedId] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const toggleExpand = (id, e) => {
     e.stopPropagation();
     setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const handleDownload = async (inv, fmt, e) => {
+    e.stopPropagation();
+    if (downloadingId) return;
+    const key = `${inv.id}:${fmt}`;
+    setDownloadingId(key);
+    try {
+      const blob =
+        fmt === 'pdf'
+          ? await invoiceApi.downloadPdf(inv.id)
+          : await invoiceApi.downloadXlsx(inv.id);
+      const ext = fmt === 'pdf' ? 'pdf' : 'xlsx';
+      saveBlob(blob, `invoice_${safeStem(inv)}.${ext}`);
+    } catch (err) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        'Download failed';
+      toast.error(msg);
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   // On mount: pick up ?status= from URL (e.g. dashboard quick-link), but only
@@ -136,6 +171,7 @@ export default function InvoiceList() {
                 <th>Total Amount</th>
                 <th>Status</th>
                 <th>Uploaded</th>
+                <th style={{ width: 160 }}>Download</th>
               </tr>
             </thead>
             <tbody>
@@ -187,10 +223,36 @@ export default function InvoiceList() {
                       <td className="muted">
                         {format(new Date(inv.created_at), 'MMM d, HH:mm')}
                       </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {DOWNLOADABLE.has(inv.status) ? (
+                          <div className="row" style={{ gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--sm"
+                              disabled={downloadingId === `${inv.id}:pdf`}
+                              onClick={(e) => handleDownload(inv, 'pdf', e)}
+                              title="Download as PDF"
+                            >
+                              {downloadingId === `${inv.id}:pdf` ? '…' : 'PDF'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--sm"
+                              disabled={downloadingId === `${inv.id}:xlsx`}
+                              onClick={(e) => handleDownload(inv, 'xlsx', e)}
+                              title="Download as Excel"
+                            >
+                              {downloadingId === `${inv.id}:xlsx` ? '…' : 'Excel'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr className="row-expanded">
-                        <td colSpan={8} onClick={(e) => e.stopPropagation()}>
+                        <td colSpan={9} onClick={(e) => e.stopPropagation()}>
                           <div className="row-expanded__grid">
                             <div>
                               <div className="muted">Address</div>
@@ -228,6 +290,18 @@ export default function InvoiceList() {
                               <div className="muted">Terms &amp; Conditions</div>
                               <div>{inv.terms_and_conditions || '—'}</div>
                             </div>
+                          </div>
+                          <div
+                            className="row"
+                            style={{ marginTop: 16, justifyContent: 'flex-end' }}
+                          >
+                            <Link
+                              to={`/invoices/${inv.id}/product-details`}
+                              className="btn btn--primary"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View Product Details →
+                            </Link>
                           </div>
                         </td>
                       </tr>

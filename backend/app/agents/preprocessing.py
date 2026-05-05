@@ -1,8 +1,7 @@
 """Agent 1 — Image preprocessing.
 
-Handles deskewing, denoising, and contrast enhancement. PDFs are rasterized
-to the first page (or first N pages — here we keep it simple) before being
-passed to the OCR engines.
+Handles deskewing, denoising, and contrast enhancement. 
+Includes high-accuracy binarization for better OCR results.
 """
 from __future__ import annotations
 
@@ -39,12 +38,17 @@ class PreprocessingAgent(BaseAgent[PreprocessingInput, PreprocessingOutput]):
         images = self._decode(inputs.file_bytes, inputs.mime_type)
         cleaned: List[np.ndarray] = []
         encoded: List[bytes] = []
+        
         for img in images:
+            # The core cleaning step
             processed = self._enhance(img)
             cleaned.append(processed)
+            
+            # Re-encoding for the cloud OCR engines (Azure/Paddle)
             ok, buf = cv2.imencode(".png", processed)
             if ok:
                 encoded.append(buf.tobytes())
+                
         return PreprocessingOutput(
             images=cleaned,
             encoded_pngs=encoded,
@@ -68,34 +72,47 @@ class PreprocessingAgent(BaseAgent[PreprocessingInput, PreprocessingOutput]):
     def _decode_pdf(self, data: bytes) -> List[np.ndarray]:
         try:
             from pdf2image import convert_from_bytes
-
-            pages = convert_from_bytes(data, dpi=250, fmt="png")
+            # Using 300 DPI for higher extraction accuracy
+            pages = convert_from_bytes(data, dpi=300, fmt="png")
             return [
                 cv2.cvtColor(np.array(p), cv2.COLOR_RGB2BGR) for p in pages
             ]
         except Exception as exc:
-            # Poppler is not bundled with pdf2image on Windows. Rather than
-            # killing the pipeline, degrade gracefully: emit zero pages. The
-            # Champ/Challenger agents key mocks off file_hash, and real cloud
-            # OCR can accept raw PDF bytes directly, so the pipeline still
-            # produces an extraction + routes to REVIEW if anything is off.
             log.warning("pdf2image_unavailable", error=str(exc))
             return []
 
-    # ---------- Enhancement ----------
+    # ---------- Enhancement & Cleaning ----------
     @staticmethod
     def _enhance(img: np.ndarray) -> np.ndarray:
+        # 1. Convert to Gray
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Denoise
-        denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7,
-                                            searchWindowSize=21)
-        # Deskew
+
+        # 2. Resizing (If image is too small, OCR accuracy drops)
+        height, width = gray.shape
+        if width < 1500:
+            scale = 1500 / width
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+        # 3. Denoise (Removes paper grain)
+        denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
+
+        # 4. Deskew (Straightens the page)
         angle = PreprocessingAgent._detect_skew(denoised)
         rotated = PreprocessingAgent._rotate(denoised, angle) if abs(angle) > 0.5 else denoised
-        # Contrast: CLAHE works better than global hist-eq on invoices
+
+        # 5. Contrast Enhancement (CLAHE)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(rotated)
-        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+
+        # 6. UPDATED: Binarization / Thresholding
+        # This turns the image into pure black and white, removing all background shadows
+        cleaned = cv2.adaptiveThreshold(
+            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
+
+        # Convert back to BGR to match original expected output format
+        return cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
 
     @staticmethod
     def _detect_skew(gray: np.ndarray) -> float:
@@ -109,14 +126,11 @@ class PreprocessingAgent(BaseAgent[PreprocessingInput, PreprocessingOutput]):
             angles = []
             for line in lines:
                 x1, y1, x2, y2 = line[0]
-                if x2 == x1:
-                    continue
+                if x2 == x1: continue
                 a = np.degrees(np.arctan2(y2 - y1, x2 - x1))
                 if -45 < a < 45:
                     angles.append(a)
-            if not angles:
-                return 0.0
-            return float(np.median(angles))
+            return float(np.median(angles)) if angles else 0.0
         except Exception:
             return 0.0
 

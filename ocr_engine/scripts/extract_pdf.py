@@ -53,27 +53,43 @@ def _render_and_extract(pdf_path: Path, page_idx: int, dpi: int = 300):
     return img, words, (W, H)
 
 
-def _run_model(pil_image, words, image_size, model_path: str):
-    """Run LayoutLMv3 on (image, words, boxes) and return Prediction."""
-    from ocr_engine.extraction.infer import InvoicePredictor
-    from ocr_engine.ocr.base import OCRResult
+_MODEL_CACHE: dict = {}  # model_path -> (processor, model, device)
 
-    # Build a fake OCRResult so we can call _infer_tokens directly.
-    ocr_res = OCRResult(words=words, image_size=image_size)
-    arr = np.array(pil_image)[:, :, ::-1].copy()  # RGB -> BGR for the predictor's pipeline
 
-    # We can't use InvoicePredictor() because its constructor instantiates PaddleOCR.
-    # Instead, instantiate the model+processor directly and reuse _tokens_to_fields.
+def _load_model(model_path: str):
+    """Load (or reuse) LayoutLMv3 model+processor. Cached per-process."""
+    if model_path in _MODEL_CACHE:
+        return _MODEL_CACHE[model_path]
+    import os
     import torch
     from transformers import LayoutLMv3ForTokenClassification, LayoutLMv3Processor
-    from ocr_engine.config import ID2LABEL
-    from ocr_engine.extraction.infer import _tokens_to_fields, enc_word_ids
-
+    # Saturate CPU cores for matmul — biggest single CPU-inference win.
+    try:
+        n = os.cpu_count() or 4
+        torch.set_num_threads(n)
+        torch.set_num_interop_threads(max(1, n // 2))
+    except Exception:
+        pass
     processor = LayoutLMv3Processor.from_pretrained(model_path, apply_ocr=False)
     model = LayoutLMv3ForTokenClassification.from_pretrained(model_path)
     model.eval()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
+    _MODEL_CACHE[model_path] = (processor, model, device)
+    return processor, model, device
+
+
+def _run_model(pil_image, words, image_size, model_path: str):
+    """Run LayoutLMv3 on (image, words, boxes) and return Prediction."""
+    from ocr_engine.ocr.base import OCRResult
+
+    ocr_res = OCRResult(words=words, image_size=image_size)
+
+    import torch
+    from ocr_engine.config import ID2LABEL
+    from ocr_engine.extraction.infer import _tokens_to_fields, enc_word_ids
+
+    processor, model, device = _load_model(model_path)
 
     word_texts = [w.text for w in words]
     boxes = ocr_res.normalized_bboxes(1000)
@@ -266,10 +282,16 @@ def postprocess(fields: dict[str, str], all_words: list[str]) -> dict[str, str]:
 @click.option("--model", "model_path", type=click.Path(exists=True, file_okay=False), required=True)
 @click.option("--dpi", type=int, default=300, show_default=True)
 @click.option("--show-tokens", is_flag=True, help="Print every non-O token with its label")
-def main(pdf_path: str, model_path: str, dpi: int, show_tokens: bool) -> None:
+@click.option("--json-only", is_flag=True, help="Print JSON only (machine-readable, for backend pipelines)")
+@click.option("--mean-conf", is_flag=True, help="Include __mean_confidence in JSON output")
+def main(pdf_path: str, model_path: str, dpi: int, show_tokens: bool, json_only: bool, mean_conf: bool) -> None:
     pdf = Path(pdf_path)
-    log.info("Extracting from: %s", pdf.name)
-    log.info("Using model: %s", model_path)
+    if json_only:
+        # Mute logs; only JSON to stdout.
+        logging.getLogger().setLevel(logging.ERROR)
+    else:
+        log.info("Extracting from: %s", pdf.name)
+        log.info("Using model: %s", model_path)
 
     import fitz
     doc = fitz.open(str(pdf))
@@ -278,14 +300,18 @@ def main(pdf_path: str, model_path: str, dpi: int, show_tokens: bool) -> None:
 
     per_page_fields: list[dict[str, str]] = []
     all_words: list[str] = []
+    confs: list[float] = []
     for pi in range(n_pages):
         img, words, size = _render_and_extract(pdf, pi, dpi)
-        log.info("Page %d: %d words", pi + 1, len(words))
+        if not json_only:
+            log.info("Page %d: %d words", pi + 1, len(words))
         if not words:
             continue
-        fields, labels, word_texts, mean_conf = _run_model(img, words, size, model_path)
-        log.info("Page %d mean_conf=%.3f", pi + 1, mean_conf)
-        if show_tokens:
+        fields, labels, word_texts, mc = _run_model(img, words, size, model_path)
+        confs.append(mc)
+        if not json_only:
+            log.info("Page %d mean_conf=%.3f", pi + 1, mc)
+        if show_tokens and not json_only:
             for w, l in zip(word_texts, labels):
                 if l != "O":
                     print(f"    {l:32s} {w}")
@@ -294,6 +320,13 @@ def main(pdf_path: str, model_path: str, dpi: int, show_tokens: bool) -> None:
 
     merged = _merge_fields(per_page_fields)
     merged = postprocess(merged, all_words)
+    if mean_conf:
+        merged["__mean_confidence"] = sum(confs) / len(confs) if confs else 0.0
+
+    if json_only:
+        print(json.dumps(merged, ensure_ascii=False))
+        return
+
     print()
     print("=" * 70)
     print(f"  EXTRACTED FIELDS  ({pdf.name})")

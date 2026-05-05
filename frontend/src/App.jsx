@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import UploadInvoices from './pages/UploadInvoices.jsx';
 import InvoiceList from './pages/InvoiceList.jsx';
 import InvoiceDetail from './pages/InvoiceDetail.jsx';
+import ProductDetails from './pages/ProductDetails.jsx';
 import ReviewQueue from './pages/ReviewQueue.jsx';
 import NotFound from './pages/NotFound.jsx';
 import { loadSession } from './store/slices/authSlice.js';
@@ -47,6 +48,10 @@ export default function App() {
         <Route path="/upload" element={<UploadInvoices />} />
         <Route path="/invoices" element={<InvoiceList />} />
         <Route path="/invoices/:id" element={<InvoiceDetail />} />
+        <Route
+          path="/invoices/:id/product-details"
+          element={<ProductDetails />}
+        />
         <Route path="/review" element={<ReviewQueue />} />
       </Route>
       <Route path="*" element={<NotFound />} />
